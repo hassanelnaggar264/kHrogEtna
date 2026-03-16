@@ -1,0 +1,50 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Core function to check authentication
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // 1. Users Collection
+    match /users/{userId} {
+      // Anyone can read user profiles (needed for followers lists, ratings, business owner lookup)
+      allow read: if true;
+      // Only the authenticated user can create/update their own profile
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // 2. Businesses Collection
+    match /businesses/{businessId} {
+      // Anyone can read businesses (Discover feed)
+      allow read: if true;
+      // Only the verified business owner (where their uid matches the document's ownerId) can write
+      allow write: if isAuthenticated() && request.auth.uid == resource.data.ownerId;
+    }
+
+    // 2b. Places Collection (if utilized for standard maps data)
+    match /places/{placeId} {
+      allow read: if true;
+      allow write: if false; 
+    }
+
+    // 3. Ratings Collection
+    match /ratings/{ratingId} {
+      // Anyone can read ratings for businesses
+      allow read: if true;
+      // Any authenticated user can create/update/delete a rating
+      allow write: if isAuthenticated();
+    }
+
+    // 4. Follows Collection
+    match /follows/{followId} {
+      // Anyone can read follows to see follower/following lists
+      allow read: if true;
+      // Any authenticated user can create/delete follow records
+      // Business account restriction is strictly enforced at the app layer as per design spec
+      allow write: if isAuthenticated();
+    }
+  }
+}
