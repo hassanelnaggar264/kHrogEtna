@@ -28,7 +28,7 @@ export default function SignUpScreen({ navigation }: Props) {
     try {
       const userDoc = await registerUser(email, password, name, username, accountType);
       setUser(userDoc);
-      // Navigation stack is handled by RootNavigation
+      navigation.reset({ index: 0, routes: [{ name: 'Main' }] });
     } catch (error: any) {
       Alert.alert('Sign Up Failed', error.message);
     } finally {

@@ -1,11 +1,11 @@
 import Share from 'react-native-share';
 import * as Linking from 'expo-linking';
 
-// Generates a universal link pointing to this business
+// Generates a universal link pointing to this place
 export const generateBusinessDeepLink = (businessId: string) => {
-  // Use expo-linking to construct a deep link to the business profile
-  // Example result: khrogetna://business/seed_b1
-  return Linking.createURL(`business/${businessId}`);
+  // Use expo-linking to construct a deep link to the place details
+  // Example result: khrogetna://place/seed_b1
+  return Linking.createURL(`place/${businessId}`);
 };
 
 export const shareToWhatsApp = async (businessName: string, businessId: string) => {

@@ -24,7 +24,7 @@ export default function LoginScreen({ navigation }: Props) {
     try {
       const userDoc = await loginUser(email, password);
       setUser(userDoc);
-      // Navigation stack is automatically handled by RootNavigation observing user state
+      navigation.reset({ index: 0, routes: [{ name: 'Main' }] });
     } catch (error: any) {
       Alert.alert('Login Failed', error.message);
     } finally {

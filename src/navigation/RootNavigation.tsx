@@ -7,12 +7,11 @@ import { auth } from '~/src/services/firebaseConfig';
 import { onAuthStateChanged } from 'firebase/auth';
 import { fetchUserDocument } from '~/src/services/authService';
 
-// Import Screens
 import LoginScreen from '~/src/screens/LoginScreen';
 import SignUpScreen from '~/src/screens/SignUpScreen';
 
 import MainTabs from '~/src/navigation/MainTabs';
-import BusinessProfileScreen from '~/src/screens/BusinessProfileScreen';
+import PlaceDetailsScreen from '~/src/screens/PlaceDetailsScreen';
 import { linking } from '~/src/navigation/linking';
 
 const Stack = createNativeStackNavigator();
@@ -48,19 +47,10 @@ export default function RootNavigation() {
   return (
     <NavigationContainer linking={linking}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {user ? (
-          // Logged in user Flow
-          <Stack.Group>
-            <Stack.Screen name="Main" component={MainTabs} />
-            <Stack.Screen name="BusinessProfile" component={BusinessProfileScreen} />
-          </Stack.Group>
-        ) : (
-          // Auth Flow
-          <>
-            <Stack.Screen name="Login" component={LoginScreen} />
-            <Stack.Screen name="SignUp" component={SignUpScreen} />
-          </>
-        )}
+        <Stack.Screen name="Main" component={MainTabs} />
+        <Stack.Screen name="PlaceDetails" component={PlaceDetailsScreen} />
+        <Stack.Screen name="Login" component={LoginScreen} />
+        <Stack.Screen name="SignUp" component={SignUpScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );
