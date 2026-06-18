@@ -39,7 +39,7 @@ export default function SignUpScreen({ navigation }: Props) {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.formContainer} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Join kHrogEtna ✨</Text>
+        <Text style={styles.title}>Join 2Where? ✨</Text>
         <Text style={styles.subtitle}>Discover places based on your mood</Text>
 
         {/* Account Type Selector */}

@@ -126,7 +126,7 @@ export default function WelcomeCelebration({ visible, onClose, userName }) {
                     }
                 ]}>
                     <Text style={[styles.emoji]}>🎉</Text>
-                    <Text style={[styles.title, { color: colors.text }]}>Welcome to kHrogEtna!</Text>
+                    <Text style={[styles.title, { color: colors.text }]}>Welcome to 2Where?!</Text>
                     <Text style={[styles.subtitle, { color: colors.text }]}>
                         Hi {userName}! You're all set to discover amazing places.
                     </Text>

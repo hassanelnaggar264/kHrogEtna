@@ -48,7 +48,7 @@ export default function DiscoverScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.headerTitle}>Discover kHrogEtna</Text>
+      <Text style={styles.headerTitle}>Discover 2Where?</Text>
 
       <View style={styles.filtersContainer}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>

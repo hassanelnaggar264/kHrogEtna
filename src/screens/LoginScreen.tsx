@@ -36,7 +36,7 @@ export default function LoginScreen({ navigation }: Props) {
     <SafeAreaView style={styles.container}>
       <View style={styles.formContainer}>
         <Text style={styles.title}>Welcome Back</Text>
-        <Text style={styles.subtitle}>Login to kHrogEtna 👑</Text>
+        <Text style={styles.subtitle}>Login to 2Where? 👑</Text>
 
         <TextInput
           style={styles.input}
