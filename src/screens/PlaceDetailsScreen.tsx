@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, Dimensions, Linking, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, Dimensions, Linking, ActivityIndicator, Modal, TextInput, Alert } from 'react-native';
 import { Image } from 'expo-image';
 import { useRoute, useNavigation } from '@react-navigation/native';
-import { MapPin, Clock, Star, Navigation, Wifi, Sparkles, Flame, Play, HelpCircle } from 'lucide-react-native';
-import { Business, PlaceMenu } from '../types/schema';
+import { MapPin, Clock, Star, Navigation, Wifi, Sparkles, Flame, Play, HelpCircle, Flag, X, Plus, RotateCcw } from 'lucide-react-native';
+import { Business, PlaceMenu, Rating } from '../types/schema';
 import { MOCK_PLACES } from '../data/mockPlaces';
 import { getPlaceMenu } from '../services/menuService';
 import { useAuthStore } from '../store/useAuthStore';
+import { getPlaceReviews, savePlaceReviewTransaction, submitContentReport, checkReviewRateLimit } from '../services/ratingService';
+import * as ImagePicker from 'expo-image-picker';
+import { Timestamp } from 'firebase/firestore';
 
 const { width } = Dimensions.get('window');
 
@@ -23,32 +26,65 @@ export default function PlaceDetailsScreen() {
 
   const [activeTab, setActiveTab] = useState<TabType>('Overview');
   const { user } = useAuthStore();
+  
+  // Menu tab state
   const [menu, setMenu] = useState<PlaceMenu | null>(null);
   const [loadingMenu, setLoadingMenu] = useState(true);
 
+  // Reviews tab state
+  const [reviewsList, setReviewsList] = useState<Rating[]>([]);
+  const [loadingReviews, setLoadingReviews] = useState(true);
+  const [reportedIds, setReportedIds] = useState<string[]>([]);
+
+  // Review Modal state
+  const [reviewModalVisible, setReviewModalVisible] = useState(false);
+  const [reviewRating, setReviewRating] = useState(0);
+  const [reviewText, setReviewText] = useState('');
+  const [userReviewId, setUserReviewId] = useState<string | undefined>(undefined);
+  const [submittingReview, setSubmittingReview] = useState(false);
+
+  // Media attachments in Review Modal
+  const [attachedMedia, setAttachedMedia] = useState<{
+    localUri: string;
+    uploading: boolean;
+    failed: boolean;
+    downloadUrl: string | null;
+  }[]>([]);
+
+  const fetchMenuAndReviews = async () => {
+    if (!business?.businessId) return;
+    
+    // Fetch menu
+    try {
+      setLoadingMenu(true);
+      const fetchedMenu = await getPlaceMenu(business.businessId);
+      setMenu(fetchedMenu);
+    } catch (err) {
+      console.error("Error loading menu:", err);
+    } finally {
+      setLoadingMenu(false);
+    }
+
+    // Fetch reviews
+    try {
+      setLoadingReviews(true);
+      const fetchedReviews = await getPlaceReviews(business.businessId);
+      setReviewsList(fetchedReviews);
+    } catch (err) {
+      console.error("Error loading reviews:", err);
+    } finally {
+      setLoadingReviews(false);
+    }
+  };
+
   useEffect(() => {
     let active = true;
-    const fetchMenu = async () => {
-      if (!business?.businessId) return;
-      try {
-        setLoadingMenu(true);
-        const fetchedMenu = await getPlaceMenu(business.businessId);
-        if (active) {
-          setMenu(fetchedMenu);
-        }
-      } catch (err) {
-        console.error("Error loading menu:", err);
-      } finally {
-        if (active) {
-          setLoadingMenu(false);
-        }
-      }
-    };
-
-    fetchMenu();
+    if (active) {
+      fetchMenuAndReviews();
+    }
 
     const unsubscribe = navigation.addListener('focus', () => {
-      fetchMenu();
+      fetchMenuAndReviews();
     });
 
     return () => {
@@ -56,6 +92,243 @@ export default function PlaceDetailsScreen() {
       unsubscribe();
     };
   }, [navigation, business?.businessId]);
+
+  const userExistingReview = user ? reviewsList.find(r => r.userId === user.userId) : null;
+
+  const visibleReviews = reviewsList.filter(rev => !reportedIds.includes(rev.ratingId));
+  const totalReviewsCount = visibleReviews.length;
+  
+  const ratingDistribution: Record<1|2|3|4|5, number> = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+  visibleReviews.forEach(rev => {
+    const rounded = Math.round(rev.rating) as 1 | 2 | 3 | 4 | 5;
+    if (ratingDistribution[rounded] !== undefined) {
+      ratingDistribution[rounded]++;
+    }
+  });
+
+  const getProgressWidth = (stars: number) => {
+    if (totalReviewsCount === 0) return '0%';
+    const count = ratingDistribution[stars as 1|2|3|4|5] || 0;
+    return `${(count / totalReviewsCount) * 100}%`;
+  };
+
+  const dynamicAvgRating = totalReviewsCount > 0
+    ? visibleReviews.reduce((acc, r) => acc + r.rating, 0) / totalReviewsCount
+    : business.ratingAvg || 0;
+
+  const triggerUpload = async (localUri: string) => {
+    if (!user) return;
+    
+    setAttachedMedia(prev => prev.map(item => 
+      item.localUri === localUri ? { ...item, uploading: true, failed: false } : item
+    ));
+
+    try {
+      const response = await fetch(localUri);
+      const blob = await response.blob();
+      const fileExtension = localUri.split('.').pop() || 'jpg';
+      const fileName = `reviews/${user.userId}/${Date.now()}_${Math.floor(Math.random() * 1000)}.${fileExtension}`;
+      
+      const { ref, uploadBytes, getDownloadURL } = require('firebase/storage');
+      const { storage } = require('../services/firebaseConfig');
+      
+      const fileRef = ref(storage, fileName);
+      await uploadBytes(fileRef, blob);
+      const downloadUrl = await getDownloadURL(fileRef);
+
+      setAttachedMedia(prev => prev.map(item => 
+        item.localUri === localUri ? { ...item, uploading: false, failed: false, downloadUrl } : item
+      ));
+    } catch (err) {
+      console.error(`Upload failed for ${localUri}:`, err);
+      setAttachedMedia(prev => prev.map(item => 
+        item.localUri === localUri ? { ...item, uploading: false, failed: true } : item
+      ));
+    }
+  };
+
+  const handleSelectMedia = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Denied', 'We need access to your photos to attach them to reviews.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.All,
+        allowsMultipleSelection: true,
+        quality: 0.7,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const newItems = result.assets.map(asset => ({
+          localUri: asset.uri,
+          uploading: false,
+          failed: false,
+          downloadUrl: null
+        }));
+
+        setAttachedMedia(prev => {
+          const updated = [...prev, ...newItems];
+          newItems.forEach(item => {
+            triggerUpload(item.localUri);
+          });
+          return updated;
+        });
+      }
+    } catch (err) {
+      console.error("Error selecting media:", err);
+    }
+  };
+
+  const handleRetryUpload = (localUri: string) => {
+    triggerUpload(localUri);
+  };
+
+  const handleRemoveMedia = (localUri: string) => {
+    setAttachedMedia(prev => prev.filter(item => item.localUri !== localUri));
+  };
+
+  const handleOpenReviewModal = () => {
+    if (!user) {
+      Alert.alert('Login Required', 'You need to be logged in to review this place.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Login', onPress: () => navigation.navigate('Login') }
+      ]);
+      return;
+    }
+    
+    if (user.accountType === 'business') {
+      Alert.alert('Business Account', 'Business accounts cannot write reviews.');
+      return;
+    }
+
+    if (userExistingReview) {
+      setReviewRating(userExistingReview.rating);
+      setReviewText(userExistingReview.review);
+      setUserReviewId(userExistingReview.ratingId);
+      if (userExistingReview.photos) {
+        setAttachedMedia(userExistingReview.photos.map(url => ({
+          localUri: url,
+          uploading: false,
+          failed: false,
+          downloadUrl: url
+        })));
+      } else {
+        setAttachedMedia([]);
+      }
+    } else {
+      setReviewRating(0);
+      setReviewText('');
+      setUserReviewId(undefined);
+      setAttachedMedia([]);
+    }
+    setReviewModalVisible(true);
+  };
+
+  const handleSubmitReview = async () => {
+    if (!user) return;
+    
+    const text = reviewText.trim();
+    if (!text) {
+      Alert.alert('Validation Error', 'Review content cannot be empty.');
+      return;
+    }
+
+    if (reviewRating === 0) {
+      Alert.alert('Validation Error', 'Please select a star rating.');
+      return;
+    }
+
+    const isUploading = attachedMedia.some(m => m.uploading);
+    if (isUploading) {
+      Alert.alert('Upload in Progress', 'Please wait for your files to finish uploading.');
+      return;
+    }
+
+    const hasFailed = attachedMedia.some(m => m.failed);
+    if (hasFailed) {
+      Alert.alert(
+        'Failed Uploads',
+        'Some files failed to upload. You can retry them, or submit the review without them.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Submit Without Failed Files', onPress: () => proceedSubmit() }
+        ]
+      );
+      return;
+    }
+
+    await proceedSubmit();
+  };
+
+  const proceedSubmit = async () => {
+    if (!user) return;
+    
+    setSubmittingReview(true);
+    try {
+      if (!userReviewId) {
+        const rateLimit = await checkReviewRateLimit(user.userId);
+        if (!rateLimit.allowed) {
+          Alert.alert('Rate Limit Exceeded', 'You can submit a maximum of 3 reviews per hour. Please try again later.');
+          setSubmittingReview(false);
+          return;
+        }
+      }
+
+      const photoUrls = attachedMedia
+        .filter(m => m.downloadUrl !== null)
+        .map(m => m.downloadUrl!);
+
+      await savePlaceReviewTransaction({
+        businessId: business.businessId,
+        userId: user.userId,
+        ratingValue: reviewRating,
+        reviewText: reviewText.trim(),
+        photoUris: photoUrls,
+        existingRatingId: userReviewId
+      });
+
+      Alert.alert('Success', 'Your review has been saved successfully!');
+      setReviewModalVisible(false);
+      fetchMenuAndReviews();
+    } catch (err) {
+      console.error("Error saving review:", err);
+      Alert.alert('Error', 'Failed to save review. Please check your connection.');
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
+
+  const handleReportReview = (review: Rating) => {
+    if (!user) {
+      Alert.alert('Login Required', 'You need to be logged in to report content.');
+      return;
+    }
+
+    Alert.alert(
+      'Report Review',
+      'Choose a reason for reporting this review:',
+      [
+        { text: 'Spam', onPress: () => submitReport(review.ratingId, 'Spam') },
+        { text: 'Inappropriate Content', onPress: () => submitReport(review.ratingId, 'Inappropriate') },
+        { text: 'Harassment', onPress: () => submitReport(review.ratingId, 'Harassment') },
+        { text: 'Cancel', style: 'cancel' }
+      ]
+    );
+  };
+
+  const submitReport = async (reviewId: string, reason: string) => {
+    if (!user) return;
+    try {
+      await submitContentReport(user.userId, 'review', reviewId, reason);
+      Alert.alert('Report Submitted', 'Thank you. We will review this review shortly.');
+      setReportedIds(prev => [...prev, reviewId]);
+    } catch (err) {
+      console.error("Error submitting report:", err);
+    }
+  };
 
   const isOwner = user?.accountType === 'business' && (
     user.userId === business.ownerId || 
@@ -311,57 +584,112 @@ export default function PlaceDetailsScreen() {
           {/* 3. REVIEWS TAB */}
           {activeTab === 'Reviews' && (
             <View style={styles.reviewsTab}>
-              <Text style={styles.tabHeaderTitle}>Visitor Feedback</Text>
-              
-              {/* Rating Distribution simulation */}
-              <View style={styles.ratingSummaryBox}>
-                <View style={styles.summaryLeft}>
-                  <Text style={styles.summaryRatingVal}>{ratingAvg.toFixed(1)}</Text>
-                  <View style={styles.starsRow}>
-                    <Star size={14} color="#FFD700" fill="#FFD700" />
-                    <Star size={14} color="#FFD700" fill="#FFD700" />
-                    <Star size={14} color="#FFD700" fill="#FFD700" />
-                    <Star size={14} color="#FFD700" fill="#FFD700" />
-                    <Star size={14} color="#FFD700" fill="#EAEAEA" />
-                  </View>
-                  <Text style={styles.summaryReviewsCount}>{ratingCount} reviews</Text>
-                </View>
-
-                <View style={styles.summaryRight}>
-                  {/* Progress bars */}
-                  {[5, 4, 3, 2, 1].map((stars) => (
-                    <View key={stars} style={styles.progressBarRow}>
-                      <Text style={styles.progressLabel}>{stars} ★</Text>
-                      <View style={styles.progressBarBackground}>
-                        <View style={[styles.progressBarFill, { width: stars >= 4 ? `${stars * 18}%` : '10%' }]} />
-                      </View>
-                    </View>
-                  ))}
-                </View>
+              <View style={styles.reviewsTabHeader}>
+                <Text style={styles.tabHeaderTitle}>Visitor Feedback</Text>
+                {(!user || user.accountType === 'personal') && (
+                  <TouchableOpacity style={styles.writeReviewBtn} onPress={handleOpenReviewModal}>
+                    <Text style={styles.writeReviewBtnText}>
+                      {userExistingReview ? '✍️ Edit Your Review' : '✍️ Write a Review'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </View>
-
-              {/* Review Cards list */}
-              {reviewItems.map((review, i) => (
-                <View key={i} style={styles.reviewCard}>
-                  <View style={styles.reviewHeader}>
-                    <View>
-                      <Text style={styles.reviewAuthor}>{review.author}</Text>
-                      <Text style={styles.reviewDate}>{review.date}</Text>
+              
+              {/* Rating Distribution calculation */}
+              {loadingReviews ? (
+                <View style={styles.menuLoadingContainer}>
+                  <ActivityIndicator size="small" color="#FF6B00" />
+                  <Text style={styles.menuLoadingText}>Loading reviews...</Text>
+                </View>
+              ) : (
+                <View>
+                  <View style={styles.ratingSummaryBox}>
+                    <View style={styles.summaryLeft}>
+                      <Text style={styles.summaryRatingVal}>{dynamicAvgRating.toFixed(1)}</Text>
+                      <View style={styles.starsRow}>
+                        {Array.from({ length: 5 }).map((_, idx) => (
+                          <Star 
+                            key={idx} 
+                            size={14} 
+                            color="#FFD700" 
+                            fill={idx < Math.round(dynamicAvgRating) ? '#FFD700' : 'transparent'} 
+                          />
+                        ))}
+                      </View>
+                      <Text style={styles.summaryReviewsCount}>{totalReviewsCount} reviews</Text>
                     </View>
-                    <View style={styles.reviewStars}>
-                      {Array.from({ length: 5 }).map((_, starIdx) => (
-                        <Star 
-                          key={starIdx} 
-                          size={12} 
-                          color="#FFD700" 
-                          fill={starIdx < review.rating ? '#FFD700' : 'transparent'} 
-                        />
+
+                    <View style={styles.summaryRight}>
+                      {[5, 4, 3, 2, 1].map((stars) => (
+                        <View key={stars} style={styles.progressBarRow}>
+                          <Text style={styles.progressLabel}>{stars} ★</Text>
+                          <View style={styles.progressBarBackground}>
+                            <View style={[styles.progressBarFill, { width: getProgressWidth(stars) as any }]} />
+                          </View>
+                        </View>
                       ))}
                     </View>
                   </View>
-                  <Text style={styles.reviewBody}>{review.review}</Text>
+
+                  {/* Review Cards list */}
+                  {reviewsList.filter(rev => !reportedIds.includes(rev.ratingId)).length === 0 ? (
+                    <Text style={styles.emptyTabText}>No visitor feedback written yet.</Text>
+                  ) : (
+                    reviewsList.filter(rev => !reportedIds.includes(rev.ratingId)).map((review, i) => {
+                      const dateStr = review.createdAt 
+                        ? (review.createdAt instanceof Timestamp 
+                            ? review.createdAt.toDate().toLocaleDateString()
+                            : new Date(review.createdAt).toLocaleDateString())
+                        : 'Recent';
+
+                      const authorName = (review as any).authorName || (review.userId === user?.userId ? 'You' : 'Visitor');
+                      
+                      return (
+                        <View key={review.ratingId || i} style={styles.reviewCard}>
+                          <View style={styles.reviewHeader}>
+                            <View style={{ flex: 1 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                <Text style={styles.reviewAuthor}>{authorName}</Text>
+                                {user && user.userId !== review.userId && (
+                                  <TouchableOpacity onPress={() => handleReportReview(review)} style={styles.reportBtn}>
+                                    <Flag size={14} color="#999" />
+                                  </TouchableOpacity>
+                                )}
+                              </View>
+                              <Text style={styles.reviewDate}>{dateStr}</Text>
+                            </View>
+                            <View style={styles.reviewStars}>
+                              {Array.from({ length: 5 }).map((_, starIdx) => (
+                                <Star 
+                                  key={starIdx} 
+                                  size={12} 
+                                  color="#FFD700" 
+                                  fill={starIdx < review.rating ? '#FFD700' : 'transparent'} 
+                                />
+                              ))}
+                            </View>
+                          </View>
+                          <Text style={styles.reviewBody}>{review.review}</Text>
+                          
+                          {/* Attached Media List */}
+                          {review.photos && review.photos.length > 0 && (
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, marginTop: 10 }}>
+                              {review.photos.map((photoUrl, pIdx) => (
+                                <Image 
+                                  key={pIdx} 
+                                  source={{ uri: photoUrl }} 
+                                  style={styles.reviewAttachedPhoto} 
+                                  contentFit="cover" 
+                                />
+                              ))}
+                            </ScrollView>
+                          )}
+                        </View>
+                      );
+                    })
+                  )}
                 </View>
-              ))}
+              )}
             </View>
           )}
 
@@ -420,6 +748,118 @@ export default function PlaceDetailsScreen() {
 
         </View>
       </ScrollView>
+
+      {/* Review Write/Edit Modal */}
+      <Modal
+        visible={reviewModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setReviewModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{userReviewId ? 'Edit Your Review' : 'Write a Review'}</Text>
+              <TouchableOpacity onPress={() => setReviewModalVisible(false)}>
+                <X size={24} color="#111" />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView contentContainerStyle={styles.modalScrollContent} keyboardShouldPersistTaps="handled">
+              
+              {/* Star Rating Select */}
+              <View style={styles.ratingSelectSection}>
+                <Text style={styles.modalLabel}>Your Rating *</Text>
+                <View style={styles.ratingStarsRow}>
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <TouchableOpacity key={star} onPress={() => setReviewRating(star)}>
+                      <Star 
+                        size={32} 
+                        color="#FFD700" 
+                        fill={star <= reviewRating ? '#FFD700' : 'transparent'} 
+                      />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+
+              {/* Review Text */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.modalLabel}>Review Details *</Text>
+                <TextInput
+                  style={[styles.modalInput, styles.textAreaInput]}
+                  placeholder="Share your experience (e.g. food quality, vibes, service...)"
+                  multiline
+                  numberOfLines={4}
+                  value={reviewText}
+                  onChangeText={setReviewText}
+                />
+              </View>
+
+              {/* UGC Media Attachments */}
+              <View style={styles.mediaAttachmentSection}>
+                <View style={styles.mediaHeaderRow}>
+                  <Text style={styles.modalLabel}>Photos & Videos (Optional)</Text>
+                  <TouchableOpacity style={styles.addMediaBtn} onPress={handleSelectMedia}>
+                    <Plus size={16} color="#FF6B00" />
+                    <Text style={styles.addMediaBtnText}>Attach Media</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {attachedMedia.length > 0 ? (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mediaThumbsScroll}>
+                    {attachedMedia.map((item, idx) => (
+                      <View key={idx} style={styles.mediaThumbWrapper}>
+                        <Image source={{ uri: item.localUri }} style={styles.mediaThumb} contentFit="cover" />
+                        
+                        {item.uploading && (
+                          <View style={styles.uploadOverlay}>
+                            <ActivityIndicator size="small" color="#FFF" />
+                          </View>
+                        )}
+
+                        {item.failed && (
+                          <View style={styles.failedOverlay}>
+                            <Text style={styles.failedText}>Failed</Text>
+                            <TouchableOpacity style={styles.retryBtn} onPress={() => handleRetryUpload(item.localUri)}>
+                              <RotateCcw size={12} color="#FFF" />
+                            </TouchableOpacity>
+                          </View>
+                        )}
+
+                        <TouchableOpacity style={styles.removeMediaBtn} onPress={() => handleRemoveMedia(item.localUri)}>
+                          <X size={12} color="#FFF" />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </ScrollView>
+                ) : (
+                  <Text style={styles.noMediaText}>No photos or videos attached yet.</Text>
+                )}
+              </View>
+
+            </ScrollView>
+
+            {/* Actions */}
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setReviewModalVisible(false)} disabled={submittingReview}>
+                <Text style={styles.modalCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalSubmitBtn} onPress={handleSubmitReview} disabled={submittingReview}>
+                {submittingReview ? (
+                  <ActivityIndicator size="small" color="#FFF" />
+                ) : (
+                  <Text style={styles.modalSubmitBtnText}>Submit Review</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+
+          </View>
+        </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -503,6 +943,11 @@ const styles = StyleSheet.create({
 
   // Reviews Tab styles
   reviewsTab: { gap: 12 },
+  reviewsTabHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  writeReviewBtn: { backgroundColor: '#FF6B00', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8 },
+  writeReviewBtnText: { color: '#FFF', fontWeight: 'bold', fontSize: 13 },
+  reportBtn: { padding: 4 },
+  reviewAttachedPhoto: { width: 80, height: 80, borderRadius: 8 },
   ratingSummaryBox: { flexDirection: 'row', padding: 16, backgroundColor: '#FFF5EB', borderRadius: 16, borderWidth: 1, borderColor: '#FFE4CC', marginBottom: 16 },
   summaryLeft: { flex: 1.2, alignItems: 'center', justifyContent: 'center', borderRightWidth: 1, borderRightColor: '#FFE4CC', paddingRight: 12 },
   summaryRatingVal: { fontSize: 40, fontWeight: 'bold', color: '#111' },
@@ -519,6 +964,37 @@ const styles = StyleSheet.create({
   reviewDate: { fontSize: 11, color: '#888', marginTop: 2 },
   reviewStars: { flexDirection: 'row', gap: 1 },
   reviewBody: { fontSize: 13, color: '#444', lineHeight: 18 },
+
+  // Modal styles
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: '#FFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingBottom: 34, maxHeight: '85%' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: '#EEE' },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#111' },
+  modalScrollContent: { padding: 16 },
+  ratingSelectSection: { alignItems: 'center', marginBottom: 20 },
+  modalLabel: { fontSize: 14, fontWeight: 'bold', color: '#333', marginBottom: 8 },
+  ratingStarsRow: { flexDirection: 'row', gap: 12, marginTop: 4 },
+  inputGroup: { marginBottom: 20 },
+  modalInput: { backgroundColor: '#F5F5F5', borderWidth: 1, borderColor: '#EAEAEA', borderRadius: 8, padding: 12, fontSize: 14, color: '#111' },
+  textAreaInput: { height: 100, textAlignVertical: 'top' },
+  mediaAttachmentSection: { marginBottom: 20 },
+  mediaHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  addMediaBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderColor: '#FF6B00', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16 },
+  addMediaBtnText: { color: '#FF6B00', fontSize: 12, fontWeight: '600' },
+  mediaThumbsScroll: { flexDirection: 'row', gap: 10 },
+  mediaThumbWrapper: { position: 'relative', marginRight: 10 },
+  mediaThumb: { width: 80, height: 80, borderRadius: 8 },
+  uploadOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center', borderRadius: 8 },
+  failedOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(255,59,48,0.7)', justifyContent: 'center', alignItems: 'center', borderRadius: 8, gap: 4 },
+  failedText: { color: '#FFF', fontSize: 10, fontWeight: 'bold' },
+  retryBtn: { backgroundColor: 'rgba(0,0,0,0.5)', padding: 4, borderRadius: 10 },
+  removeMediaBtn: { position: 'absolute', top: -6, right: -6, backgroundColor: 'rgba(0,0,0,0.6)', width: 18, height: 18, borderRadius: 9, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#FFF' },
+  noMediaText: { fontSize: 12, color: '#999', fontStyle: 'italic', paddingVertical: 8 },
+  modalActions: { flexDirection: 'row', paddingHorizontal: 16, gap: 12 },
+  modalCancelBtn: { flex: 1, backgroundColor: '#F5F5F5', paddingVertical: 14, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: '#EAEAEA' },
+  modalCancelBtnText: { color: '#666', fontWeight: 'bold', fontSize: 15 },
+  modalSubmitBtn: { flex: 1, backgroundColor: '#FF6B00', paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
+  modalSubmitBtnText: { color: '#FFF', fontWeight: 'bold', fontSize: 15 },
 
   // Media Tab styles
   mediaTab: {},

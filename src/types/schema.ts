@@ -43,6 +43,16 @@ export interface Rating {
   review: string;
   photos?: string[];
   createdAt: Timestamp;
+  updatedAt?: Timestamp;
+}
+
+export interface ContentReport {
+  reportId: string;
+  userId: string; // Reporter
+  targetType: 'review' | 'post';
+  targetId: string; // ID of the review/post
+  reason: string; // Spam, Harassment, Inappropriate, Other
+  createdAt: Timestamp;
 }
 
 export interface Follow {
