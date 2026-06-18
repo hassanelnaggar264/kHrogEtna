@@ -13,7 +13,8 @@ export const linking: LinkingOptions<ReactNavigation.RootParamList> = {
           Profile: 'profile',
         },
       },
-      BusinessProfile: 'business/:id', // Deep link to Business Profile
+      PlaceDetails: 'place/:id', // Deep link to Place Details
+      MenuEditor: 'place/:businessId/edit-menu',
       Login: 'login',
       SignUp: 'signup',
     },

@@ -6,10 +6,12 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../services/firebaseConfig';
 import { User } from '../types/schema';
 import { logoutUser } from '../services/authService';
+import { useNavigation } from '@react-navigation/native';
 
 export default function UserProfileScreen() {
   const { user, setUser } = useAuthStore();
   const [loadingAction, setLoadingAction] = useState(false);
+  const navigation = useNavigation<any>();
 
   // Setup real-time listener for the user's document to keep counters synced
   useEffect(() => {
@@ -22,7 +24,33 @@ export default function UserProfileScreen() {
     return () => unsub();
   }, [user?.userId]);
 
-  if (!user) return null;
+  if (!user) {
+    return (
+      <SafeAreaView style={styles.guestContainer}>
+        <View style={styles.guestContent}>
+          <Text style={styles.guestEmoji}>👑</Text>
+          <Text style={styles.guestTitle}>Your Profile</Text>
+          <Text style={styles.guestSubtitle}>
+            Log in to view your profile, manage your ratings, and follow other explorers!
+          </Text>
+          
+          <TouchableOpacity 
+            style={styles.guestLoginButton} 
+            onPress={() => navigation.navigate('Login')}
+          >
+            <Text style={styles.guestLoginButtonText}>Log In</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.guestSignUpButton} 
+            onPress={() => navigation.navigate('SignUp')}
+          >
+            <Text style={styles.guestSignUpButtonText}>Create Account</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -80,5 +108,15 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 14, color: '#666' },
   actionsContainer: { padding: 20 },
   logoutButton: { padding: 15, backgroundColor: '#FFF', borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: '#FF3B30' },
-  logoutText: { color: '#FF3B30', fontWeight: 'bold', fontSize: 16 }
+  logoutText: { color: '#FF3B30', fontWeight: 'bold', fontSize: 16 },
+  // Guest View styles
+  guestContainer: { flex: 1, backgroundColor: '#fff', justifyContent: 'center' },
+  guestContent: { padding: 24, alignItems: 'center', alignSelf: 'center', width: '100%', maxWidth: 400 },
+  guestEmoji: { fontSize: 64, marginBottom: 16 },
+  guestTitle: { fontSize: 28, fontWeight: 'bold', color: '#111', marginBottom: 8 },
+  guestSubtitle: { fontSize: 16, color: '#666', textAlign: 'center', marginBottom: 32, lineHeight: 24 },
+  guestLoginButton: { width: '100%', padding: 16, backgroundColor: '#FF6B00', borderRadius: 12, alignItems: 'center', marginBottom: 12 },
+  guestLoginButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  guestSignUpButton: { width: '100%', padding: 16, backgroundColor: '#FFF', borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: '#FF6B00' },
+  guestSignUpButtonText: { color: '#FF6B00', fontSize: 16, fontWeight: 'bold' }
 });
