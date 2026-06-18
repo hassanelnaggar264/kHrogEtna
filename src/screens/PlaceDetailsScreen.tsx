@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, Dimensions, Linking } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, Dimensions, Linking, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { MapPin, Clock, Star, Navigation, Wifi, Sparkles, Flame, Play, HelpCircle } from 'lucide-react-native';
-import { Business } from '../types/schema';
+import { Business, PlaceMenu } from '../types/schema';
 import { MOCK_PLACES } from '../data/mockPlaces';
+import { getPlaceMenu } from '../services/menuService';
+import { useAuthStore } from '../store/useAuthStore';
 
 const { width } = Dimensions.get('window');
 
@@ -20,6 +22,46 @@ export default function PlaceDetailsScreen() {
   const business: Business = (route.params as RouteParams)?.business;
 
   const [activeTab, setActiveTab] = useState<TabType>('Overview');
+  const { user } = useAuthStore();
+  const [menu, setMenu] = useState<PlaceMenu | null>(null);
+  const [loadingMenu, setLoadingMenu] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    const fetchMenu = async () => {
+      if (!business?.businessId) return;
+      try {
+        setLoadingMenu(true);
+        const fetchedMenu = await getPlaceMenu(business.businessId);
+        if (active) {
+          setMenu(fetchedMenu);
+        }
+      } catch (err) {
+        console.error("Error loading menu:", err);
+      } finally {
+        if (active) {
+          setLoadingMenu(false);
+        }
+      }
+    };
+
+    fetchMenu();
+
+    const unsubscribe = navigation.addListener('focus', () => {
+      fetchMenu();
+    });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [navigation, business?.businessId]);
+
+  const isOwner = user?.accountType === 'business' && (
+    user.userId === business.ownerId || 
+    business.ownerId === `owner_${business.businessId.replace('place_', '')}` ||
+    !business.ownerId
+  );
 
   if (!business) {
     return (
@@ -45,13 +87,7 @@ export default function PlaceDetailsScreen() {
   const openingHours = business.openingHours || '09:00 AM - 11:00 PM';
   const description = business.description || 'No description available.';
 
-  // Structured menu & reviews from enriched place, or fallbacks
-  const menuItems = enrichedPlace?.menu || [
-    { name: 'House Blend Coffee', price: 'EGP 75', description: 'Freshly roasted signature blend.' },
-    { name: 'Club Sandwich', price: 'EGP 160', description: 'Classic club sandwich with fries.' },
-    { name: 'Fresh Orange Juice', price: 'EGP 60', description: '100% natural squeezed juice.' }
-  ];
-
+  // Structured reviews from enriched place, or fallbacks
   const reviewItems = enrichedPlace?.reviews || [
     { author: 'Guest User', rating: 5, review: 'Amazing atmosphere and super friendly staff. Highly recommended!', date: '2026-06-14' }
   ];
@@ -189,16 +225,86 @@ export default function PlaceDetailsScreen() {
           {/* 2. MENU TAB */}
           {activeTab === 'Menu' && (
             <View style={styles.menuTab}>
-              <Text style={styles.tabHeaderTitle}>Outing Menu</Text>
-              {menuItems.map((item, index) => (
-                <View key={index} style={styles.menuItemCard}>
-                  <View style={styles.menuItemHeader}>
-                    <Text style={styles.menuItemName}>{item.name}</Text>
-                    <Text style={styles.menuItemPrice}>{item.price}</Text>
-                  </View>
-                  <Text style={styles.menuItemDesc}>{item.description}</Text>
+              <View style={styles.menuTabHeader}>
+                <Text style={styles.tabHeaderTitle}>Outing Menu</Text>
+                {isOwner && (
+                  <TouchableOpacity 
+                    style={styles.editMenuBtn} 
+                    onPress={() => navigation.navigate('MenuEditor', { businessId: business.businessId })}
+                  >
+                    <Text style={styles.editMenuBtnText}>⚙️ Edit Menu</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {loadingMenu ? (
+                <View style={styles.menuLoadingContainer}>
+                  <ActivityIndicator size="small" color="#FF6B00" />
+                  <Text style={styles.menuLoadingText}>Loading menu...</Text>
                 </View>
-              ))}
+              ) : !menu || (menu.sections.length === 0 && (!menu.menuPhotos || menu.menuPhotos.length === 0)) ? (
+                <Text style={styles.emptyTabText}>No menu items or photos available yet.</Text>
+              ) : (
+                <View style={{ gap: 20 }}>
+                  {menu.sections.map((section) => (
+                    <View key={section.sectionId} style={styles.sectionGroup}>
+                      <Text style={styles.menuSectionHeader}>{section.title}</Text>
+                      {section.items.map((item) => (
+                        <View key={item.itemId} style={styles.menuItemCard}>
+                          <View style={styles.menuItemRow}>
+                            {item.photo ? (
+                              <Image 
+                                source={{ uri: item.photo }} 
+                                style={styles.menuItemPhoto} 
+                                contentFit="cover" 
+                              />
+                            ) : null}
+                            <View style={styles.menuItemContent}>
+                              <View style={styles.menuItemHeader}>
+                                <Text style={styles.menuItemName}>{item.name}</Text>
+                                <Text style={styles.menuItemPrice}>{item.price} {item.currency || 'EGP'}</Text>
+                              </View>
+                              {item.nameEn ? (
+                                <Text style={styles.menuItemNameEn}>{item.nameEn}</Text>
+                              ) : null}
+                              {item.description ? (
+                                <Text style={styles.menuItemDesc}>{item.description}</Text>
+                              ) : null}
+                              {item.tags && item.tags.length > 0 ? (
+                                <View style={styles.menuItemTagsRow}>
+                                  {item.tags.map((tag, tIdx) => (
+                                    <View key={tIdx} style={styles.menuItemTagBadge}>
+                                      <Text style={styles.menuItemTagText}>{tag}</Text>
+                                    </View>
+                                  ))}
+                                </View>
+                              ) : null}
+                            </View>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  ))}
+
+                  {/* Optional Menu Photos Gallery */}
+                  {menu.menuPhotos && menu.menuPhotos.length > 0 && (
+                    <View style={styles.menuPhotosSection}>
+                      <Text style={styles.menuPhotosTitle}>Menu Photos</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.menuPhotosScroll}>
+                        {menu.menuPhotos.map((photoUrl, pIdx) => (
+                          <View key={pIdx} style={styles.menuPhotoContainer}>
+                            <Image 
+                              source={{ uri: photoUrl }} 
+                              style={styles.menuPhotoAttachment} 
+                              contentFit="cover" 
+                            />
+                          </View>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  )}
+                </View>
+              )}
             </View>
           )}
 
@@ -369,7 +475,26 @@ const styles = StyleSheet.create({
 
   // Menu Tab styles
   menuTab: { gap: 12 },
-  tabHeaderTitle: { fontSize: 18, fontWeight: 'bold', color: '#111', marginBottom: 12 },
+  menuTabHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  editMenuBtn: { backgroundColor: '#FFF5EB', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: '#FFE4CC' },
+  editMenuBtnText: { color: '#FF6B00', fontWeight: 'bold', fontSize: 13 },
+  menuLoadingContainer: { paddingVertical: 20, alignItems: 'center', gap: 8 },
+  menuLoadingText: { color: '#666', fontSize: 13 },
+  sectionGroup: { gap: 10 },
+  menuSectionHeader: { fontSize: 16, fontWeight: 'bold', color: '#111', marginTop: 10, marginBottom: 4 },
+  menuItemRow: { flexDirection: 'row', gap: 12, alignItems: 'center' },
+  menuItemPhoto: { width: 70, height: 70, borderRadius: 8 },
+  menuItemContent: { flex: 1, justifyContent: 'center' },
+  menuItemNameEn: { fontSize: 12, color: '#999', fontStyle: 'italic', marginBottom: 4 },
+  menuItemTagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
+  menuItemTagBadge: { backgroundColor: '#F0F0F0', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
+  menuItemTagText: { fontSize: 10, color: '#666', fontWeight: 'bold' },
+  menuPhotosSection: { marginTop: 16 },
+  menuPhotosTitle: { fontSize: 16, fontWeight: 'bold', color: '#111', marginBottom: 10 },
+  menuPhotosScroll: { gap: 10 },
+  menuPhotoContainer: { borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: '#EEE' },
+  menuPhotoAttachment: { width: 140, height: 180 },
+  tabHeaderTitle: { fontSize: 18, fontWeight: 'bold', color: '#111' },
   menuItemCard: { backgroundColor: '#FFF', padding: 16, borderRadius: 12, borderWidth: 1, borderColor: '#EEE', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.02, shadowRadius: 2 },
   menuItemHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
   menuItemName: { fontSize: 16, fontWeight: 'bold', color: '#111' },

@@ -51,3 +51,26 @@ export interface Follow {
   followingId: string; // References users.userId
   createdAt: Timestamp;
 }
+
+export interface MenuItem {
+  itemId: string;
+  name: string;
+  nameEn?: string;
+  price: number;
+  currency: string; // "EGP"
+  description?: string;
+  tags?: string[]; // e.g. ["spicy", "veg", "vegan"]
+  photo?: string;
+}
+
+export interface MenuSection {
+  sectionId: string;
+  title: string;
+  items: MenuItem[];
+}
+
+export interface PlaceMenu {
+  businessId: string;
+  sections: MenuSection[];
+  menuPhotos?: string[];
+}
