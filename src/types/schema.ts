@@ -43,6 +43,16 @@ export interface Rating {
   review: string;
   photos?: string[];
   createdAt: Timestamp;
+  updatedAt?: Timestamp;
+}
+
+export interface ContentReport {
+  reportId: string;
+  userId: string; // Reporter
+  targetType: 'review' | 'post';
+  targetId: string; // ID of the review/post
+  reason: string; // Spam, Harassment, Inappropriate, Other
+  createdAt: Timestamp;
 }
 
 export interface Follow {
@@ -50,4 +60,27 @@ export interface Follow {
   followerId: string; // References users.userId
   followingId: string; // References users.userId
   createdAt: Timestamp;
+}
+
+export interface MenuItem {
+  itemId: string;
+  name: string;
+  nameEn?: string;
+  price: number;
+  currency: string; // "EGP"
+  description?: string;
+  tags?: string[]; // e.g. ["spicy", "veg", "vegan"]
+  photo?: string;
+}
+
+export interface MenuSection {
+  sectionId: string;
+  title: string;
+  items: MenuItem[];
+}
+
+export interface PlaceMenu {
+  businessId: string;
+  sections: MenuSection[];
+  menuPhotos?: string[];
 }
