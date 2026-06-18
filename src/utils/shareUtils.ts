@@ -10,7 +10,7 @@ export const generateBusinessDeepLink = (businessId: string) => {
 
 export const shareToWhatsApp = async (businessName: string, businessId: string) => {
   const deepLink = generateBusinessDeepLink(businessId);
-  const message = `Check out ${businessName} on kHrogEtna! Discover places based on mood 👑\n\nLink: ${deepLink}`;
+  const message = `Check out ${businessName} on 2Where?! Discover places based on mood 👑\n\nLink: ${deepLink}`;
   
   try {
     const url = `whatsapp://send?text=${encodeURIComponent(message)}`;
@@ -28,11 +28,11 @@ export const shareToWhatsApp = async (businessName: string, businessId: string) 
 
 export const shareToInstagram = async (businessName: string, businessId: string) => {
   const deepLink = generateBusinessDeepLink(businessId);
-  const message = `Discover ${businessName} on kHrogEtna! \n${deepLink}`;
+  const message = `Discover ${businessName} on 2Where?! \n${deepLink}`;
   
   try {
     await Share.shareSingle({
-      title: 'kHrogEtna',
+      title: '2Where?',
       message: message,
       social: Share.Social.INSTAGRAM as any,
       url: deepLink,
@@ -53,7 +53,7 @@ export const nativeShare = async (businessName: string, businessId: string) => {
   try {
     await Share.open({
       title: `Check out ${businessName}`,
-      message: `See ${businessName} on kHrogEtna! 👑\n${deepLink}`
+      message: `See ${businessName} on 2Where?! 👑\n${deepLink}`
     });
   } catch (error) {
     console.log("User cancelled share", error);
