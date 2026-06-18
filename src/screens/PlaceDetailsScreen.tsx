@@ -3,13 +3,15 @@ import { View, Text, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, Dim
 import { Image } from 'expo-image';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { MapPin, Clock, Star, Navigation, Wifi, Sparkles, Flame, Play, HelpCircle, Flag, X, Plus, RotateCcw } from 'lucide-react-native';
-import { Business, PlaceMenu, Rating } from '../types/schema';
+import { Business, PlaceMenu, Rating, PlacePost } from '../types/schema';
 import { MOCK_PLACES } from '../data/mockPlaces';
 import { getPlaceMenu } from '../services/menuService';
 import { useAuthStore } from '../store/useAuthStore';
 import { getPlaceReviews, savePlaceReviewTransaction, submitContentReport, checkReviewRateLimit } from '../services/ratingService';
+import { getPlacePosts } from '../services/postService';
 import * as ImagePicker from 'expo-image-picker';
 import { Timestamp } from 'firebase/firestore';
+import { Video, ResizeMode } from 'expo-av';
 
 const { width } = Dimensions.get('window');
 
@@ -36,6 +38,15 @@ export default function PlaceDetailsScreen() {
   const [loadingReviews, setLoadingReviews] = useState(true);
   const [reportedIds, setReportedIds] = useState<string[]>([]);
 
+  // Reels tab state
+  const [reelsList, setReelsList] = useState<PlacePost[]>([]);
+  const [loadingReels, setLoadingReels] = useState(true);
+
+  // Full-Screen Video Modal state
+  const [videoModalVisible, setVideoModalVisible] = useState(false);
+  const [selectedReel, setSelectedReel] = useState<PlacePost | null>(null);
+  const [activePlay, setActivePlay] = useState(true);
+
   // Review Modal state
   const [reviewModalVisible, setReviewModalVisible] = useState(false);
   const [reviewRating, setReviewRating] = useState(0);
@@ -51,7 +62,7 @@ export default function PlaceDetailsScreen() {
     downloadUrl: string | null;
   }[]>([]);
 
-  const fetchMenuAndReviews = async () => {
+  const fetchMenuReviewsAndReels = async () => {
     if (!business?.businessId) return;
     
     // Fetch menu
@@ -75,16 +86,27 @@ export default function PlaceDetailsScreen() {
     } finally {
       setLoadingReviews(false);
     }
+
+    // Fetch reels
+    try {
+      setLoadingReels(true);
+      const fetchedReels = await getPlacePosts(business.businessId);
+      setReelsList(fetchedReels);
+    } catch (err) {
+      console.error("Error loading reels:", err);
+    } finally {
+      setLoadingReels(false);
+    }
   };
 
   useEffect(() => {
     let active = true;
     if (active) {
-      fetchMenuAndReviews();
+      fetchMenuReviewsAndReels();
     }
 
     const unsubscribe = navigation.addListener('focus', () => {
-      fetchMenuAndReviews();
+      fetchMenuReviewsAndReels();
     });
 
     return () => {
@@ -292,7 +314,7 @@ export default function PlaceDetailsScreen() {
 
       Alert.alert('Success', 'Your review has been saved successfully!');
       setReviewModalVisible(false);
-      fetchMenuAndReviews();
+      fetchMenuReviewsAndReels();
     } catch (err) {
       console.error("Error saving review:", err);
       Alert.alert('Error', 'Failed to save review. Please check your connection.');
@@ -719,30 +741,56 @@ export default function PlaceDetailsScreen() {
           {/* 5. REELS TAB */}
           {activeTab === 'Reels' && (
             <View style={styles.reelsTab}>
-              <Text style={styles.tabHeaderTitle}>Visitor Reels</Text>
-              <View style={styles.reelsGrid}>
-                {[
-                  { views: '12.5k', title: 'Weekend Vibe! ☕', img: 'https://images.unsplash.com/photo-1554118811-1e0d58224f24' },
-                  { views: '4.8k', title: 'Must Try Dessert', img: 'https://images.unsplash.com/photo-1559925393-8be0ec41b50d' },
-                  { views: '28.1k', title: 'Rooftop DJ night', img: 'https://images.unsplash.com/photo-1533777857889-4be7c70b33f7' },
-                  { views: '8.2k', title: 'Study Session Vibe', img: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085' }
-                ].map((reel, index) => (
-                  <View key={index} style={styles.reelCard}>
-                    <Image
-                      source={{ uri: reel.img }}
-                      style={styles.reelImage}
-                      contentFit="cover"
-                    />
-                    <View style={styles.reelOverlay}>
-                      <View style={styles.playIconContainer}>
-                        <Play size={18} color="#FFF" fill="#FFF" />
-                      </View>
-                      <Text style={styles.reelViews}>{reel.views} views</Text>
-                    </View>
-                    <Text style={styles.reelTitle} numberOfLines={1}>{reel.title}</Text>
-                  </View>
-                ))}
+              <View style={styles.reelsTabHeader}>
+                <Text style={styles.tabHeaderTitle}>Visitor Reels</Text>
+                {isOwner && (
+                  <TouchableOpacity 
+                    style={styles.uploadReelBtn} 
+                    onPress={() => navigation.navigate('UploadReel', { placeId: business.businessId })}
+                  >
+                    <Plus size={16} color="#FF6B00" />
+                    <Text style={styles.uploadReelBtnText}>Upload Reel</Text>
+                  </TouchableOpacity>
+                )}
               </View>
+
+              {loadingReels ? (
+                <View style={styles.menuLoadingContainer}>
+                  <ActivityIndicator size="small" color="#FF6B00" />
+                  <Text style={styles.menuLoadingText}>Loading reels...</Text>
+                </View>
+              ) : reelsList.length === 0 ? (
+                <Text style={styles.emptyTabText}>No reels uploaded yet.</Text>
+              ) : (
+                <View style={styles.reelsGrid}>
+                  {reelsList.map((reel) => (
+                    <TouchableOpacity 
+                      key={reel.postId} 
+                      style={styles.reelCard}
+                      onPress={() => {
+                        setSelectedReel(reel);
+                        setActivePlay(true);
+                        setVideoModalVisible(true);
+                      }}
+                    >
+                      <Image
+                        source={{ uri: reel.thumbnailUrl || reel.mediaUrl }}
+                        style={styles.reelImage}
+                        contentFit="cover"
+                      />
+                      <View style={styles.reelOverlay}>
+                        <View style={styles.playIconContainer}>
+                          <Play size={18} color="#FFF" fill="#FFF" />
+                        </View>
+                        <Text style={styles.reelViews}>Recent</Text>
+                      </View>
+                      {reel.caption ? (
+                        <Text style={styles.reelTitle} numberOfLines={1}>{reel.caption}</Text>
+                      ) : null}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
             </View>
           )}
 
@@ -857,6 +905,70 @@ export default function PlaceDetailsScreen() {
             </View>
 
           </View>
+        </View>
+      </Modal>
+
+      {/* Immersive Full Screen Video Player Modal */}
+      <Modal
+        visible={videoModalVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => {
+          setVideoModalVisible(false);
+          setActivePlay(false);
+        }}
+      >
+        <View style={styles.fullscreenModalOverlay}>
+          {selectedReel && (
+            <TouchableOpacity 
+              activeOpacity={1} 
+              style={styles.fullscreenVideoTouch}
+              onPress={() => setActivePlay(!activePlay)}
+            >
+              {selectedReel.mediaType === 'video' ? (
+                <Video
+                  source={{ uri: selectedReel.mediaUrl }}
+                  style={styles.fullscreenVideo}
+                  resizeMode={ResizeMode.COVER}
+                  shouldPlay={activePlay}
+                  isLooping
+                  useNativeControls={false}
+                />
+              ) : (
+                <Image 
+                  source={{ uri: selectedReel.mediaUrl }} 
+                  style={styles.fullscreenVideo} 
+                  contentFit="contain" 
+                />
+              )}
+
+              {/* Pause Icon Indicator Overlay */}
+              {!activePlay && selectedReel.mediaType === 'video' && (
+                <View style={styles.pauseOverlay}>
+                  <Play size={48} color="#FFF" fill="#FFF" style={{ opacity: 0.8 }} />
+                </View>
+              )}
+
+              {/* Close Button */}
+              <TouchableOpacity 
+                style={styles.closePlayerBtn} 
+                onPress={() => {
+                  setVideoModalVisible(false);
+                  setActivePlay(false);
+                }}
+              >
+                <X size={28} color="#FFF" />
+              </TouchableOpacity>
+
+              {/* Info Overlay (Bottom) */}
+              <View style={styles.playerInfoOverlay}>
+                <Text style={styles.playerVenueName}>📍 {business.name}</Text>
+                {selectedReel.caption ? (
+                  <Text style={styles.playerCaption}>{selectedReel.caption}</Text>
+                ) : null}
+              </View>
+            </TouchableOpacity>
+          )}
         </View>
       </Modal>
 
@@ -1003,6 +1115,9 @@ const styles = StyleSheet.create({
 
   // Reels Tab styles
   reelsTab: {},
+  reelsTabHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  uploadReelBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderColor: '#FF6B00', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: '#FFF5EB' },
+  uploadReelBtnText: { color: '#FF6B00', fontSize: 12, fontWeight: 'bold' },
   reelsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 8 },
   reelCard: { width: (width - 50) / 2, height: 240, borderRadius: 16, overflow: 'hidden', backgroundColor: '#000', marginBottom: 10, position: 'relative' },
   reelImage: { width: '100%', height: '100%', opacity: 0.8 },
@@ -1010,6 +1125,16 @@ const styles = StyleSheet.create({
   playIconContainer: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)' },
   reelViews: { position: 'absolute', bottom: 12, left: 12, color: '#FFF', fontSize: 12, fontWeight: '600' },
   reelTitle: { position: 'absolute', bottom: 32, left: 12, right: 12, color: '#FFF', fontSize: 14, fontWeight: 'bold' },
+
+  // Immersive Video Player styles
+  fullscreenModalOverlay: { flex: 1, backgroundColor: '#000' },
+  fullscreenVideoTouch: { flex: 1, position: 'relative', justifyContent: 'center' },
+  fullscreenVideo: { width: '100%', height: '100%' },
+  pauseOverlay: { position: 'absolute', alignSelf: 'center', justifyContent: 'center', alignItems: 'center' },
+  closePlayerBtn: { position: 'absolute', top: 50, left: 20, width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', zIndex: 10 },
+  playerInfoOverlay: { position: 'absolute', bottom: 40, left: 20, right: 20, padding: 16, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.6)', gap: 6 },
+  playerVenueName: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
+  playerCaption: { color: '#EEE', fontSize: 14, lineHeight: 20 },
 
   centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
   errorText: { fontSize: 16, color: '#FF3B30', fontWeight: '600' },

@@ -15,6 +15,7 @@ export const linking: LinkingOptions<ReactNavigation.RootParamList> = {
       },
       PlaceDetails: 'place/:id', // Deep link to Place Details
       MenuEditor: 'place/:businessId/edit-menu',
+      UploadReel: 'place/:placeId/upload-reel',
       Login: 'login',
       SignUp: 'signup',
     },

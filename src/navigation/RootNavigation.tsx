@@ -13,6 +13,7 @@ import SignUpScreen from '~/src/screens/SignUpScreen';
 import MainTabs from '~/src/navigation/MainTabs';
 import PlaceDetailsScreen from '~/src/screens/PlaceDetailsScreen';
 import MenuEditorScreen from '~/src/screens/MenuEditorScreen';
+import UploadReelScreen from '~/src/screens/UploadReelScreen';
 import { linking } from '~/src/navigation/linking';
 
 const Stack = createNativeStackNavigator();
@@ -51,6 +52,7 @@ export default function RootNavigation() {
         <Stack.Screen name="Main" component={MainTabs} />
         <Stack.Screen name="PlaceDetails" component={PlaceDetailsScreen} />
         <Stack.Screen name="MenuEditor" component={MenuEditorScreen} />
+        <Stack.Screen name="UploadReel" component={UploadReelScreen} />
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="SignUp" component={SignUpScreen} />
       </Stack.Navigator>

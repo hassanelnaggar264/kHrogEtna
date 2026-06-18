@@ -84,3 +84,14 @@ export interface PlaceMenu {
   sections: MenuSection[];
   menuPhotos?: string[];
 }
+
+export interface PlacePost {
+  postId: string;
+  placeId: string;             // ربط إجباري بالمكان
+  authorBusinessId: string;    // معرف الحساب التجاري الناشر
+  mediaType: 'video' | 'image';
+  mediaUrl: string;            // رابط الوسيط على Firebase Storage
+  thumbnailUrl?: string;       // صورة مصغرة للفيديو
+  caption?: string;            // شرح أو نص المنشور
+  createdAt: Timestamp;
+}
