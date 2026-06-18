@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, SafeAreaView, TouchableOpacity, Dimensions, Linking } from 'react-native';
 import { Image } from 'expo-image';
-import MapView, { Marker } from 'react-native-maps';
 import { useRoute, useNavigation } from '@react-navigation/native';
-import { MapPin, Clock, Star, Navigation, Wifi, ShieldAlert, Sparkles, Flame, Play, HelpCircle } from 'lucide-react-native';
+import { MapPin, Clock, Star, Navigation, Wifi, Sparkles, Flame, Play, HelpCircle } from 'lucide-react-native';
 import { Business } from '../types/schema';
-import { MOCK_PLACES, MockPlace } from '../data/mockPlaces';
+import { MOCK_PLACES } from '../data/mockPlaces';
 
 const { width } = Dimensions.get('window');
 
@@ -21,7 +20,6 @@ export default function PlaceDetailsScreen() {
   const business: Business = (route.params as RouteParams)?.business;
 
   const [activeTab, setActiveTab] = useState<TabType>('Overview');
-  const [mapError, setMapError] = useState(false);
 
   if (!business) {
     return (
@@ -51,7 +49,7 @@ export default function PlaceDetailsScreen() {
   const menuItems = enrichedPlace?.menu || [
     { name: 'House Blend Coffee', price: 'EGP 75', description: 'Freshly roasted signature blend.' },
     { name: 'Club Sandwich', price: 'EGP 160', description: 'Classic club sandwich with fries.' },
-    { name: 'Fresh Orange Juice', price: 'EGP 60', description: '100% natural squezeed juice.' }
+    { name: 'Fresh Orange Juice', price: 'EGP 60', description: '100% natural squeezed juice.' }
   ];
 
   const reviewItems = enrichedPlace?.reviews || [
@@ -136,34 +134,18 @@ export default function PlaceDetailsScreen() {
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Location & Directions</Text>
                 
-                {!mapError ? (
-                  <View style={styles.mapContainer}>
-                    <MapView
-                      style={styles.map}
-                      initialRegion={{
-                        latitude: locationCoords.latitude,
-                        longitude: locationCoords.longitude,
-                        latitudeDelta: 0.006,
-                        longitudeDelta: 0.006,
-                      }}
-                      scrollEnabled={false}
-                      zoomEnabled={false}
-                      rotateEnabled={false}
-                      pitchEnabled={false}
-                    >
-                      <Marker coordinate={locationCoords} pinColor="#FF6B00" />
-                    </MapView>
+                <View style={styles.mapContainer}>
+                  <Image
+                    source={{ 
+                      uri: `https://static-maps.yandex.ru/1.x/?ll=${locationCoords.longitude},${locationCoords.latitude}&z=15&l=map&size=600,300&pt=${locationCoords.longitude},${locationCoords.latitude},pm2orgm` 
+                    }}
+                    style={styles.staticMapImage}
+                    contentFit="cover"
+                  />
+                  <View style={styles.mapPinOverlay}>
+                    <Text style={styles.mapPinLabel} numberOfLines={1}>{business.name}</Text>
                   </View>
-                ) : (
-                  // Fallback Static Map Preview Card
-                  <View style={styles.mapPlaceholder}>
-                    <MapPin size={32} color="#FF6B00" />
-                    <Text style={styles.mapPlaceholderTitle}>{business.name}</Text>
-                    <Text style={styles.mapPlaceholderCoords}>
-                      Coordinates: {locationCoords.latitude.toFixed(4)}, {locationCoords.longitude.toFixed(4)}
-                    </Text>
-                  </View>
-                )}
+                </View>
 
                 <TouchableOpacity style={styles.directionsButton} onPress={openDirections}>
                   <Navigation size={18} color="#FFF" />
@@ -369,14 +351,11 @@ const styles = StyleSheet.create({
   section: { marginBottom: 24 },
   sectionTitle: { fontSize: 18, fontWeight: 'bold', color: '#111', marginBottom: 12 },
   
-  // Interactive Map styles
-  mapContainer: { height: 180, width: '100%', borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: '#EEE' },
-  map: { flex: 1 },
-  
-  // Fallback static map styles
-  mapPlaceholder: { height: 160, backgroundColor: '#F8F9FA', borderRadius: 16, borderStyle: 'dashed', borderWidth: 1.5, borderColor: '#DDD', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  mapPlaceholderTitle: { fontSize: 14, fontWeight: 'bold', color: '#444' },
-  mapPlaceholderCoords: { fontSize: 12, color: '#888' },
+  // Static Map Container styles (prevent RNMapsAirModule crash)
+  mapContainer: { height: 180, width: '100%', borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: '#EEE', position: 'relative' },
+  staticMapImage: { width: '100%', height: '100%' },
+  mapPinOverlay: { position: 'absolute', bottom: 12, left: 12, backgroundColor: 'rgba(255,255,255,0.9)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: '#EEE' },
+  mapPinLabel: { fontSize: 12, fontWeight: 'bold', color: '#111', maxWidth: width - 80 },
   
   directionsButton: { flexDirection: 'row', backgroundColor: '#FF6B00', paddingVertical: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 12 },
   directionsButtonText: { color: '#FFF', fontWeight: 'bold', fontSize: 15 },
