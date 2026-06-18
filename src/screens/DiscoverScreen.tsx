@@ -260,7 +260,7 @@ export default function DiscoverScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FAFAFA' },
-  header: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
+  header: { paddingHorizontal: 20, paddingTop: 40, paddingBottom: 8 },
   headerTitle: { fontSize: 32, fontWeight: 'bold', color: '#111' },
   headerSubtitle: { fontSize: 14, color: '#666', marginTop: 4 },
   searchSection: { flexDirection: 'row', paddingHorizontal: 20, paddingVertical: 12, gap: 10 },
